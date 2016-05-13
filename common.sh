@@ -4,7 +4,12 @@ SCRIPT_DIR=$(readlink -f $0)
 APP_BASE=$(dirname ${SCRIPT_DIR})
 BUILDS_BASE="${APP_BASE}/builds"
 MASTER_CONFIG="${HOME}/git/master-live-build-config"
+DEPENDENCY_PROJECT="${APP_BASE}/../penprep"
 
+# Paths for live build stages to place files from functions
+CHROOT_DIR="${BUILD_DIR}/kali-config/common/hooks"
+KALI_INCLUDES_DIR="${BUILD_DIR}/kali-config/common/includes"
+DEB_INCLUDES_DIR="${BUILD_DIR}/config/includes.chroot"
 # ===============================[ Check Permissions ]============================== #
 function check_root {
     ACTUAL_USER=$(env | grep SUDO_USER | cut -d= -f 2)
@@ -29,17 +34,17 @@ function update_kali() {
 
 
 function create_conf() {
-    # During first-run, create the 'mybuilds.conf' file that stores useful settings
+    # During first-run, create the 'settings.conf' file that stores useful settings
     mkdir -p "${BUILDS_BASE}"
-    cat << EOF > "${APP_BASE}/config/mybuilds.conf"
+    cat << EOF > "${APP_BASE}/config/settings.conf"
 # PERSONAL BUILD SETTINGS
 VPN_SERVER=''
 VPN_PORT='1194'
 VPN_CLIENT_CONF="${APP_BASE}/config/vpn-client-confs/client1.conf"
 ISO_FINAL_DIR="/var/www/html/iso"
 EOF
-    echo -e "${YELLOW} [WARN] First-Run: Settings file created at ${APP_BASE}/config/mybuilds.conf${RESET}"
-    echo -e "${YELLOW} [WARN] Open file for editing and press ANY KEY when ready to continue...${RESET}"
+    echo -e "\n\n${YELLOW}[WARN] First-Run: Settings file created at ${APP_BASE}/config/settings.conf${RESET}"
+    echo -e "${YELLOW}[WARN] Open file for editing and press ANY KEY when ready to continue...${RESET}\n\n"
     read
     init_project
 }
@@ -56,11 +61,11 @@ function print_banner() {
 
 function init_project() {
     # If we have just pulled down this project, intialize the project directory and configurations
-    if [[ ! -f "${APP_BASE}/config/mybuilds.conf" ]]; then
+    if [[ ! -f "${APP_BASE}/config/settings.conf" ]]; then
         #read -p "[+] Declare your BUILDS folder for this and future build efforts: " -i "${HOME}/builds" -e BUILDS_BASE
         create_conf
     else
-        source "${APP_BASE}/config/mybuilds.conf"
+        source "${APP_BASE}/config/settings.conf"
     fi
 
     BUILD_DIR="${BUILDS_BASE}/${BUILD_NAME}"
@@ -84,6 +89,12 @@ function init_project() {
         #shopt -u dotglob
     fi
 
+    # Also git clone sister project "penprep" in order to use helper installer scripts
+    if [[ ! -d "${DEPENDENCY_PROJECT}" ]]; then
+        mkdir -p "${DEPENDENCY_PROJECT}"
+        git clone https://github.com/cashiuus/penprep "${DEPENDENCY_PROJECT}"
+    fi
+
     print_banner
     update_kali
     # -------- Setup a build cache -- to make future builds much faster
@@ -95,7 +106,7 @@ function init_project() {
 
 
 function start_build() {
-    echo -e "\n ${GREEN}[*] =====${RESET}[ Begin Live Build ]${GREEN}===== [*] ${RESET}"
+    echo -e "\n\n${GREEN}[*] =====${RESET}[ Begin Live Build ]${GREEN}===== [*] ${RESET}"
     cd "${BUILD_DIR}"
     STR_VARIANT=$(echo $BUILD_VARIANT | cut -d "-" -f2)
     #./build.sh
@@ -121,7 +132,7 @@ function build_completion() {
         ISO_NAME="kali-linux-${BUILD_DIST}-${BUILD_ARCH}.iso"
     fi
     if [[ ${BUILD_DIST} == 'kali-rolling' ]]; then
-        echo -e "${YELLOW}[DEBUG] ${RESET}Distro kali-rolling in use. Renamed expected ISO."
+        #echo -e "${YELLOW}[DEBUG] ${RESET}Distro kali-rolling in use. Renamed expected ISO."
         if [[ $STR_VARIANT == 'default' ]]; then
             ISO_NAME="kali-linux-rolling-${BUILD_ARCH}.iso"
         else
@@ -136,16 +147,40 @@ function build_completion() {
     echo -e "${GREEN}[*] ===[ Build Completed Successfully${YELLOW}( Time: $(( $(( FINISH_TIME - START_TIME )) / 60 )) minutes )${GREEN} ]=== [*]\n${RESET}"
 
     echo -e "${GREEN}[*]${RESET} Copying finished ISO to www Directory. Please wait..."
-    #echo -e "${GREEN}Location of ISO:${RESET} ${ISO_FILE}"
 
-    if [[ "${ISO_FINAL_DIR}" -ne "" ]]; then
+    if [[ "${ISO_FINAL_DIR}" != "" ]]; then
         [[ ! -d "${ISO_FINAL_DIR}" ]] && mkdir -p "${ISO_FINAL_DIR}"
         md5sum "${ISO_FILE}" > "${ISO_FINAL_DIR}/${BUILD_NAME}.md5"
         # -u = means only copy if source file is newer than destination file
         cp -u "${ISO_FILE}" "${ISO_FINAL_DIR}/${BUILD_NAME}.iso"
     else
-        echo -e "{YELLOW}[WARN]${RESET} ISO_FINAL_DIR variable empty. Skipping ISO copy..."
+        echo -e "${YELLOW}[WARN]${RESET} 'ISO_FINAL_DIR' variable empty. Skipping ISO copy..."
+        echo -e "${GREEN}[*]${RESET} Location of ISO: ${ISO_FILE}"
     fi
+}
+
+
+# ===========================[ Functions: VM-Tools ]============================== #
+function include_vm_tools() {
+    # Create a vm-tools installer script and run it during boot
+    file="install-vm-tools.sh"
+    cat <<EOF > "/tmp/${file}"
+#!/bin/sh
+
+if (dmidecode | grep -iq virtual); then
+    apt-get -qq update
+    apt-get -y install open-vm-tools-desktop fuse
+fi
+EOF
+
+    # Add file to Desktop so user can run script right after booting
+    cp "/tmp/${file}" "${DEB_INCLUDES_DIR}/root/Desktop/${file}"
+
+    mv "/tmp/${file}" "${BUILD_DIR}/config/includes.chroot/${file}"
+    chmod 755 "${BUILD_DIR}/config/includes.chroot/${file}"
+    # TODO: Add a line to end of preseed to execute this file
+
+
 }
 
 
@@ -154,20 +189,26 @@ function setup_ssh() {
     #
     # SSH  -------- Create SSH key w/o password since it's for an agent
     echo -e "${GREEN}[*]${RESET} Configuring SSH Capability"
-    cd "${BUILD_DIR}"
-    [[ ! -s "${HOME}/.ssh/id_rsa" ]]  &&   ssh-keygen -b 2048 -t rsa -f $HOME/.ssh/id_rsa -P ""
-    filedir="config/includes.chroot/root/.ssh"
-    [[ ! -d "${filedir}" ]] && mkdir -p "${filedir}"
 
+    cd "${BUILD_DIR}"
+    # If our build server doesn't already have an SSH private key, generate one
+    [[ ! -s "${HOME}/.ssh/id_rsa" ]]  &&   ssh-keygen -b 2048 -t rsa -f $HOME/.ssh/id_rsa -P ""
+
+    FILE_DIR="${DEB_INCLUDES_DIR}/root/.ssh"
+    [[ ! -d "${FILE_DIR}" ]] && mkdir -p "${FILE_DIR}"
     # Put our public key into the authorized file for the agent so we can SSH into it
-    [[ -s "${filedir}/authorized_keys" ]] && rm "${filedir}/authorized_keys"
-    cp -u "${HOME}/.ssh/id_rsa.pub" "${filedir}/authorized_keys"
+    [[ -s "${FILE_DIR}/authorized_keys" ]] && rm "${FILE_DIR}/authorized_keys"
+    cp "${HOME}/.ssh/id_rsa.pub" "${FILE_DIR}/authorized_keys"
 
     # TODO: Set it up to run the "setup-ssh-server.sh" file after install
-    filedir="config/includes.chroot/root/scripts"
-    [[ ! -d "${filedir}" ]] && mkdir -p "${filedir}"
+    FILE_DIR="${DEB_INCLUDES_DIR}/root/scripts"
+    [[ ! -d "${FILE_DIR}" ]] && mkdir -p "${FILE_DIR}"
     echo -e "${GREEN}[*] ===> ${RESET}Placing 'setup-ssh-server.sh' into build image"
-    cp "${APP_BASE}/setup-scripts/setup-ssh-server.sh" "${filedir}/"
+    #cp "${DEPENDENCY_PROJECT}/kali/setup/setup-ssh-server.sh" "${FILE_DIR}/"
+
+    # or we run it right now during chroot phase
+    cp "${DEPENDENCY_PROJECT}/kali/setup/setup-ssh-server.sh" "${CHROOT_DIR}/0801-setup-ssh-server.hook.chroot"
+    chmod 755 "${CHROOT_DIR}/0801-setup-ssh-server.hook.chroot"
 
 }
 
@@ -192,7 +233,7 @@ function setup_vpn {
     echo -e "${GREEN}[*]${RESET} Using VPN Client File: ${VPN_CLIENT_CONF}"
 
     if [[ -f "${VPN_CLIENT_CONF}" ]]; then
-        echo -e "${GREEN}[*] ${RESET}VPN Client file found in build"
+        echo -e "${GREEN}[*] ${RESET}VPN Client file found in build, cleaning chroot first..."
         rm -rf "${file}"/*
         cp "${VPN_CLIENT_CONF}" "${file}/"
     elif [[ -f "${VPN_PREP_DIR}/${CLIENT_NAME}.conf" ]]; then
@@ -221,26 +262,14 @@ function xfce4_default_layout() {
 }
 
 
-# ==================[ Functions: VM-Tools ]==================== #
-
-function include_vm_tools() {
-
-    file="0900-install-vm-tools.hook.chroot"
-    cat <<EOF > "/tmp/${file}"
-#!/bin/sh
-
-apt-get -qq update
-apt-get -y install open-vm-tools-desktop fuse
-EOF
-cp -u "/tmp/${file}" "${BUILD_DIR}/config/includes.chroot/${file}"
-rm "/tmp/${file}"
-}
-
-
-
-
 
 # ==================[ Functions: Git ]==================== #
+function check_git_repo() {
+    # Check if repo exists
+    [[ -d $1 ]]
+
+}
+
 
 function clone_git_repo() {
     #TODO: Function to clone git repo

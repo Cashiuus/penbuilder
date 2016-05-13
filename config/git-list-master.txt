@@ -119,7 +119,6 @@ https://github.com/averagesecurityguy/Phishing
 https://github.com/pentestgeek/phishing-frenzy-templates
 
 
-
 # Miscellaneous
 https://github.com/vrana/adminer
 https://github.com/GNOME/gnome-shell-extensions

@@ -1,19 +1,22 @@
 #!/bin/bash
-## ========================================================================== ##
+## =============================================================================
+# File:     recipe-2-kali-reverse-vpn-live.sh
 #
-# Created:
-# Author:           Cashiuus - cashiuus(at)gmail(dot)com
+# Author:   Cashiuus
+# Created:  14-NOV-2015 - - - - - - (Revised: 13-MAY-2016)
 #
-# Build Focus:      Minimal ISO with auto-install & reverse VPN Agent
+# MIT License ~ http://opensource.org/licenses/MIT
+#-[ Notes ]---------------------------------------------------------------------
+# Purpose:          Minimal ISO with auto-install & reverse VPN Agent
+#                   Kali runs as Live (not installed/persistent)
 #
 # Desktop:          xfce
 # Metapackages:
 # ISO Size:         885 MB
 # Special Notes:    Default login is root/toor
 #
-# Look & Feel:
-## ========================================================================== ##
-__version__="0.1"
+## =============================================================================
+__version__="0.2"
 __author__='Cashiuus'
 SCRIPT_DIR=$(dirname $0)
 ## ===============[ Text Colors ]================ ##
@@ -63,18 +66,16 @@ grep -q "sysv-rc-conf" "${file}" || echo -e "sysv-rc-conf" >> "${file}"
 #file="config/hooks"
 # *NOTE: Kali sets up a few hooks, so always start at 0500 and increment up from there.
 cd "${BUILD_DIR}"
-hooksdir="kali-config/common/hooks"
-#filedir="config/hooks"
-[[ ! -d "${hooksdir}" ]] && mkdir -p "${hooksdir}"
-cat <<EOF > "${hooksdir}/0501-start-services.chroot"
+
+[[ ! -d "${CHROOT_DIR}" ]] && mkdir -p "${CHROOT_DIR}"
+cat <<EOF > "${CHROOT_DIR}/0501-start-services.chroot"
 #!/bin/bash
 service ssh start
 service openvpn start
 update-rc.d -f openvpn enable
 update-rc.d -f ssh enable
 EOF
-chmod 755 "${hooksdir}/0501-start-services.chroot"
-# +x stopped working correctly
+chmod 755 "${CHROOT_DIR}/0501-start-services.chroot"
 
 
 # ======================[ Stage 3: Includes ]=========================
@@ -141,4 +142,3 @@ start_build
 # =========================[ Post-Build - Move ISO ]========================== #
 
 build_completion
-
