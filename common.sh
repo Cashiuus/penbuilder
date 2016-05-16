@@ -50,6 +50,9 @@ EOF
 }
 
 function print_banner() {
+    lines=$(tput lines)
+    columns=$(tput cols)
+    #echo -e "Bar: ${BAR}"
     echo -e "\n${BLUE}===================[  ${RESET}${BOLD}Kali 2016 Live Build Engine  ${RESET}${BLUE}]===================${RESET}"
     echo -e ""
     echo -e "  ${BOLD}Build Name:${RESET}\t\t${BUILD_NAME}"
