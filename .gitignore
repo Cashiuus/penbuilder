@@ -3,7 +3,6 @@
 # gitignore Example Files: https://github.com/github/gitignore
 
 # Builds Project-specific
-builds/*
 build.sh
 
 # Configurations
