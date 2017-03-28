@@ -33,7 +33,7 @@ else
     exit 1
 fi
 # ============[ DECLARE DEFAULTS ]============== #
-BUILD_NAME="1-kali-standard"
+BUILD_NAME="2-kali-custom"
 BUILD_VARIANT="variant-default"
 BUILD_DIST="kali-rolling"
 BUILD_ARCH="amd64"

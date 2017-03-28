@@ -146,9 +146,6 @@ function build_completion() {
     fi
     ISO_FILE="${IMAGES_DIR}/${ISO_NAME}"
 
-    print_banner
-    echo -e "${GREEN}[*] ===[ Build Completed Successfully${YELLOW}( Time: $(( $(( FINISH_TIME - START_TIME )) / 60 )) minutes )${GREEN} ]=== [*]\n${RESET}"
-
     echo -e "${GREEN}[*]${RESET} Copying finished ISO to www Directory. Please wait..."
 
     if [[ "${ISO_FINAL_DIR}" != "" ]]; then
@@ -160,6 +157,9 @@ function build_completion() {
         echo -e "${YELLOW}[WARN]${RESET} 'ISO_FINAL_DIR' variable empty. Skipping ISO copy..."
         echo -e "${GREEN}[*]${RESET} Location of ISO: ${ISO_FILE}"
     fi
+
+    print_banner
+    echo -e "${GREEN}[*] ===[ Build Completed Successfully${YELLOW} ( Time: $(( $(( FINISH_TIME - START_TIME )) / 60 )) minutes )${GREEN} ]=== [*]\n${RESET}"
 }
 
 
